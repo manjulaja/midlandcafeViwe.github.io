@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Orders</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- SheetJS (for Excel export) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- Firebase App (the core Firebase SDK, compat version for browsers) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <!-- Firebase Database SDK (compat version for browsers) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+    <style>
+        .container {
+            margin-top: 50px;
+        }
+
+        table {
+            width: 100%;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2 class="text-center">All Orders</h2>
+
+        <!-- Filters -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <label for="filter-outlet">Filter by Outlet</label>
+                <select id="filter-outlet" class="form-select">
+                    <option value="">All Outlets</option>
+                    <option value="Midland Bakers">Midland Bakers</option>
+                    <option value="Midland Cafe">Midland Cafe</option>
+                    <!-- Add more options as needed -->
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="filter-date">Filter by Date</label>
+                <input type="date" id="filter-date" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <button id="filter-btn" class="btn btn-primary mt-4">Apply Filters</button>
+            </div>
+            <div class="col-md-3 text-end">
+                <button id="download-excel-btn" class="btn btn-success mt-4">Download Excel</button>
+            </div>
+        </div>
+
+        <div id="orders-grid">
+            <!-- Table to display the orders -->
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Outlet</th>
+                        <th>Items</th>
+                        <th>Quantity</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-table-body">
+                    <!-- Orders will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7f1Pwjd_pKa7cYpebHzfW2ob8OsIVbhA",
+            authDomain: "midlandbakers-dcd8c.firebaseapp.com",
+            projectId: "midlandbakers-dcd8c",
+            storageBucket: "midlandbakers-dcd8c.appspot.com",
+            messagingSenderId: "1014534068300",
+            appId: "1:1014534068300:web:45b3bb181880a71b813ce9",
+            measurementId: "G-FD5BZKSDJF"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Function to fetch and display orders with filtering
+        function displayOrders(outletFilter = '', dateFilter = '') {
+            const ordersRef = firebase.database().ref('orders');
+            ordersRef.once('value', (snapshot) => {
+                const orders = snapshot.val();
+                const ordersTableBody = document.getElementById('orders-table-body');
+                ordersTableBody.innerHTML = ''; // Clear previous entries
+
+                let count = 1;
+                let filteredData = []; // For Excel export
+
+                for (const orderId in orders) {
+                    const order = orders[orderId];
+                    let items = '';
+                    let quantities = '';
+
+                    // Create a list of items and quantities
+                    order.items.forEach(item => {
+                        items += `${item.name}<br>`;
+                        quantities += `${item.quantity}<br>`;
+                    });
+
+                    // Apply filter for outlet and date
+                    const orderDate = new Date(order.date).toISOString().split('T')[0];
+                    if (
+                        (outletFilter === '' || order.outlet === outletFilter) &&
+                        (dateFilter === '' || orderDate === dateFilter)
+                    ) {
+                        // Append new row to the table
+                        ordersTableBody.innerHTML += `
+                            <tr>
+                                <td>${count++}</td>
+                                <td>${order.outlet}</td>
+                                <td>${items}</td>
+                                <td>${quantities}</td>
+                                <td>${order.date}</td>
+                            </tr>
+                        `;
+
+                        // Store filtered data for Excel export
+                        filteredData.push({
+                            '#': count - 1,
+                            'Outlet': order.outlet,
+                            'Items': items.replace(/<br>/g, ', '),
+                            'Quantity': quantities.replace(/<br>/g, ', '),
+                            'Date': order.date
+                        });
+                    }
+                }
+
+                // Save filtered data for download
+                window.filteredOrdersForDownload = filteredData;
+            }, (error) => {
+                console.error('Error fetching orders: ', error);
+            });
+        }
+
+        // Add click event listener to "View Orders" button
+        document.getElementById('filter-btn').addEventListener('click', function () {
+            const outletFilter = document.getElementById('filter-outlet').value;
+            const dateFilter = document.getElementById('filter-date').value;
+            displayOrders(outletFilter, dateFilter);
+        });
+
+        // Download filtered data as Excel
+        document.getElementById('download-excel-btn').addEventListener('click', function () {
+            if (window.filteredOrdersForDownload && window.filteredOrdersForDownload.length > 0) {
+                const worksheet = XLSX.utils.json_to_sheet(window.filteredOrdersForDownload);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Orders");
+                XLSX.writeFile(workbook, "filtered_orders.xlsx");
+            } else {
+                alert('No data available to download.');
+            }
+        });
+
+        // Initial load: Display all orders
+        displayOrders();
+    </script>
+</body>
+
+</html>
